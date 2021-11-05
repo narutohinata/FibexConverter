@@ -45,8 +45,8 @@ class BaseConfigurationFactory(object):
                           serviceinstances, serviceinstanceclients, eventhandlers, evengroupreceivers
                           )
 
-    def create_someip_service_instance(self, service, instanceid, protover):
-        return SOMEIPBaseServiceInstance(service, instanceid, protover)
+    def create_someip_service_instance(self, service, instanceid, protover, identifer):
+        return SOMEIPBaseServiceInstance(service, instanceid, protover, identifer)
 
     def create_someip_service_instance_client(self, service, instanceid, protover, server):
         return SOMEIPBaseServiceInstanceClient(service, instanceid, protover, server)
@@ -57,8 +57,8 @@ class BaseConfigurationFactory(object):
     def create_someip_service_eventgroup_receiver(self, serviceinstance, eventgroupid, sender):
         return SOMEIPBaseServiceEventgroupReceiver(serviceinstance, eventgroupid, sender)
 
-    def create_someip_service(self, name, serviceid, majorver, minorver, methods, events, fields, eventgroups):
-        return SOMEIPBaseService(name, serviceid, majorver, minorver, methods, events, fields, eventgroups)
+    def create_someip_service(self, name, package, serviceid, majorver, minorver, methods, events, fields, eventgroups):
+        return SOMEIPBaseService(name, package, serviceid, majorver, minorver, methods, events, fields, eventgroups)
 
     def create_someip_service_method(self, name, methodid, calltype, relia, inparams, outparams,
                                      reqdebounce=-1, reqmaxretention=-1, resmaxretention=-1, tlv=False):
@@ -126,11 +126,33 @@ class BaseConfigurationFactory(object):
     def create_legacy_signal(self, id, name, compu_scale, compu_consts):
         return SOMEIPBaseLegacySignal(id, name, compu_scale, compu_consts)
 
+    def create_package(self, name, ID, parentID):
+        return BasisPackage(name,ID,parentID)
 
 class BaseItem(object):
     def legacy(self):
         return False
 
+class BasisPackage(BaseItem):
+    def __init__(self, name, ID, parentID) -> None:
+        self._name:str = name
+        self._ID:str = ID
+        self._parentID:str = parentID
+        self._parent:BasisPackage = None
+    
+    def name(self)->str:
+        return self._name
+
+    def ID(self)->str:
+        return self._ID
+        
+    def parent(self)->str:
+        return self._parent
+    
+    def absolute_path(self)->str:
+        if self._parent is None:
+            return self.name()
+        return self._parent.absolute_path() + "." + self.name()
 
 class BaseECU(BaseItem):
     def __init__(self, name, controllers):
@@ -261,8 +283,8 @@ class BaseSocket(BaseItem):
 
 
 class SOMEIPBaseServiceInstance(BaseItem):
-    def __init__(self, service, instanceid, protover):
-        self.__service__ = service
+    def __init__(self, service, instanceid, protover, identifer):
+        self.__service__:SOMEIPBaseService = service
         self.__instanceid__ = int(instanceid)
         self.__protover__ = int(protover)
         self.__socket__ = None
@@ -270,6 +292,7 @@ class SOMEIPBaseServiceInstance(BaseItem):
         self.__clients__ = []
         self.__eventgroup_sender__ = []
         self.__eventgroup_receiver__ = []
+        self.__identifer__ = identifer
 
         service.add_instance(self)
 
@@ -309,6 +332,8 @@ class SOMEIPBaseServiceInstance(BaseItem):
     def socket(self):
         return self.__socket__
 
+    def identifer(self):
+        return self.__identifer__
 
 class SOMEIPBaseServiceInstanceClient(BaseItem):
     def __init__(self, service, instanceid, protover, instance):
@@ -394,8 +419,9 @@ class SOMEIPBaseServiceEventgroupReceiver(BaseItem):
 
 
 class SOMEIPBaseService(BaseItem):
-    def __init__(self, name, serviceid, majorver, minorver, methods, events, fields, eventgroups):
+    def __init__(self, name, package, serviceid, majorver, minorver, methods, events, fields, eventgroups):
         self.__name__ = name
+        self.__package__:BasisPackage = package
         self.__serviceid__ = int(serviceid)
         self.__major__ = int(majorver)
         self.__minor__ = int(minorver)

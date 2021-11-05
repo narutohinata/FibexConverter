@@ -21,6 +21,7 @@
 
 import xml.etree.ElementTree
 from abstract_parser import AbstractParser
+from configuration_base_classes import BaseConfigurationFactory, BasisPackage
 
 
 class FibexParser(AbstractParser):
@@ -53,6 +54,8 @@ class FibexParser(AbstractParser):
 
         # FIBEX-ID -> (PSIS[], CSIS[], EH[], CEGS[])
         self.__aeps__ = dict()
+
+        self.__packages__ = dict()
 
     def get_id(self, element):
         return self.get_attribute(element, 'ID')
@@ -691,6 +694,8 @@ class FibexParser(AbstractParser):
         id = None
         sid = self.get_id(service)
         name = self.get_child_text(service, './ho:SHORT-NAME')
+        packageID = self.get_child_attribute(service, "./fx:PACKAGE-REF","ID-REF")
+        package = self.__packages__[packageID]
         service_id = int(self.get_child_text(service, './fx:SERVICE-IDENTIFIER'))
         major_version = int(self.get_child_text(service, './service:API-VERSION/service:MAJOR'))
         minor_version = int(self.get_child_text(service, './service:API-VERSION/service:MINOR'))
@@ -719,7 +724,7 @@ class FibexParser(AbstractParser):
             id, eg = self.parse_eventgroup(eg, id, eventids, fieldids)
             eventgroups[eg.id()] = eg
 
-        s = self.__conf_factory__.create_someip_service(name, service_id, major_version, minor_version, methods, events,
+        s = self.__conf_factory__.create_someip_service(name, package, service_id, major_version, minor_version, methods, events,
                                                         fields, eventgroups)
         return sid, s
 
@@ -812,30 +817,53 @@ class FibexParser(AbstractParser):
 
         return neps
 
-    def parse_psis(self, root):
-        for aep in root.findall('.//it:APPLICATION-ENDPOINT', self.__ns__):
-            protover = self.get_child_text(aep, 'it:SERIALIZATION-TECHNOLOGY/it:VERSION')
-            if protover is None:
-                protover = 1
+    def parse_psis(self, root:xml.etree.ElementTree.Element):
+        for e in root.findall('.//fx:ECUS/fx:ECU', self.__ns__):
+            ecu_versions = e.findall('fx:ELEMENT-REVISIONS/fx:ELEMENT-REVISION', self.__ns__)
+            assert(len(ecu_versions)==1)
+            ecu_version:str = self.get_child_text(ecu_versions[0],'ho:REVISION-LABEL')
+            ecu_name = self.get_child_text(e, "ho:SHORT-NAME")
+            assert(ecu_name is not None)
+            for aep in e.findall('.//it:APPLICATION-ENDPOINT', self.__ns__):
+                tcps = aep.findall('it:IT-TRANSPORT-PROTOCOL-CONFIGURATION/it:TCP-TP/it:TCP-PORT',self.__ns__)
+                udps = aep.findall('it:IT-TRANSPORT-PROTOCOL-CONFIGURATION/it:UDP-TP/it:UDP-PORT',self.__ns__)
+                identifer = ecu_name
+                if(len(tcps)==1):
+                    identifer = identifer + "_TCP"
+                    port = self.get_child_text(tcps[0],'it:PORT-NUMBER')
+                    if port is None:
+                        assert(self.get_child_text(tcps[0],'it:DYNAMICALLY-ASSIGNED') is not None)
+                    else:
+                        identifer = identifer + "_" + port
+                if(len(udps)==1):
+                    identifer = identifer + "_UDP"
+                    port = self.get_child_text(udps[0],'it:PORT-NUMBER')
+                    if port is None:
+                        assert(self.get_child_text(udps[0],'it:DYNAMICALLY-ASSIGNED') is not None)
+                    else:
+                        identifer = identifer + "_" + port
+                protover = self.get_child_text(aep, 'it:SERIALIZATION-TECHNOLOGY/it:VERSION')
+                if protover is None:
+                    protover = 1
 
-            aepid = self.get_id(aep)
-            for psi in aep.findall('it:PROVIDED-SERVICE-INSTANCES/it:PROVIDED-SERVICE-INSTANCE', self.__ns__):
-                id = self.get_id(psi)
-                instanceid = self.get_child_text(psi, 'it:INSTANCE-IDENTIFIER')
-                servref = self.get_child_attribute(psi, 'service:SERVICE-INTERFACE-REF', 'ID-REF')
-                if servref not in self.__services__:
-                    print(f"ERROR in FIBEX: I cannot find Service {servref}")
-                else:
-                    service = self.__services__[servref]
+                aepid = self.get_id(aep)
+                for psi in aep.findall('it:PROVIDED-SERVICE-INSTANCES/it:PROVIDED-SERVICE-INSTANCE', self.__ns__):
+                    id = self.get_id(psi)
+                    instanceid = self.get_child_text(psi, 'it:INSTANCE-IDENTIFIER')
+                    servref = self.get_child_attribute(psi, 'service:SERVICE-INTERFACE-REF', 'ID-REF')
+                    if servref not in self.__services__:
+                        print(f"ERROR in FIBEX: I cannot find Service {servref}")
+                    else:
+                        service = self.__services__[servref]
 
-                    si = self.__conf_factory__.create_someip_service_instance(service, instanceid, protover)
-                    self.__ServiceInstances__[id] = si
+                        si = self.__conf_factory__.create_someip_service_instance(service, instanceid, protover, identifer)
+                        self.__ServiceInstances__[id] = si
 
-                    if aepid not in self.__aeps__:
-                        self.__aeps__[aepid] = ([], [], [], [])
+                        if aepid not in self.__aeps__:
+                            self.__aeps__[aepid] = ([], [], [], [])
 
-                    psis, csis, ehs, cegs = self.__aeps__[aepid]
-                    self.__aeps__[aepid] = (psis + [si], csis, ehs, cegs)
+                        psis, csis, ehs, cegs = self.__aeps__[aepid]
+                        self.__aeps__[aepid] = (psis + [si], csis, ehs, cegs)
 
     def parse_psis_pass_two(self, root):
         for aep in root.findall('.//it:APPLICATION-ENDPOINT', self.__ns__):
@@ -921,13 +949,16 @@ class FibexParser(AbstractParser):
         # we could add code here to determine real port based on name
         return -1
 
-    def parse_ecus(self, root):
+    def parse_ecus(self, root:xml.etree.ElementTree.Element):
         self.parse_psis(root)
         self.parse_csis_and_cegs(root)
         self.parse_psis_pass_two(root)
 
         for e in root.findall('.//fx:ECUS/fx:ECU', self.__ns__):
-            ecu_name = self.get_child_text(e, "ho:SHORT-NAME")
+            versions = e.findall('fx:ELEMENT-REVISIONS/fx:ELEMENT-REVISION', self.__ns__)
+            assert(len(versions)==1)
+            version:str = self.get_child_text(versions[0],'ho:REVISION-LABEL')
+            ecu_name = self.get_child_text(e, "ho:SHORT-NAME") + "_" + version
 
             ctrls = dict()
             for c in e.findall('fx:CONTROLLERS/fx:CONTROLLER', self.__ns__):
@@ -1040,12 +1071,33 @@ class FibexParser(AbstractParser):
                 ctrllist += [self.__conf_factory__.create_controller(ctrl["name"], ctrl["ifaces"])]
             self.__conf_factory__.create_ecu(ecu_name, ctrllist)
 
+    def parse_packages(self,root:xml.etree.ElementTree.Element):
+        for package in root.findall('.//fx:PACKAGES/fx:PACKAGE', self.__ns__):
+            name = self.get_child_text(package,'./ho:SHORT-NAME')
+            ID = self.get_attribute(package,'ID')
+            parentID = self.get_child_attribute(package,'./fx:PACKAGE-REF','ID-REF')
+            ret = self.__conf_factory__.create_package(name, ID, parentID)
+            self.__packages__[ID] = ret
+        for packageID in self.__packages__:
+            package:BasisPackage = self.__packages__[packageID]
+            if (package._parentID != None):
+                if (package._parentID not in self.__packages__):
+                    print("Error: cannot find package ",package._parentID)
+                package._parent = self.__packages__[package._parentID]
+
+
     def parse_file(self, conf_factory, filename, verbose=False):
-        self.__conf_factory__ = conf_factory
+        self.__conf_factory__:BaseConfigurationFactory = conf_factory
 
         tree = xml.etree.ElementTree.parse(filename)
         root = tree.getroot()
 
+        if verbose:
+            print("*** Parsing Packages ***")
+        self.parse_packages(root)
+        if verbose:
+            print("")
+        
         if verbose:
             print("*** Parsing Channels ***")
         self.parse_channels(root)
