@@ -18,6 +18,8 @@ def main():
         print(args.fibex_path)
         with open(args.output_path, 'w') as f:
             build_json([args.fibex_path], f, 0)
+    else:
+        print("fibex path don't exist!")
 
 if __name__ == "__main__":
     main()

@@ -224,7 +224,6 @@ class SOMEIPService(SOMEIPBaseService):
         eventDic = dict()
         egDic = dict()
         instanceDic = dict()
-
         for methodid in sorted(self.__methods__):
             method:SOMEIPServiceMethod = self.__methods__[methodid]
             methodDic[method.name()] = method.json()
@@ -242,18 +241,29 @@ class SOMEIPService(SOMEIPBaseService):
             egDic[eg.name()] = eg.json()
 
         repeatDict = {}
+
         for instance in self.instances():
             instance:SOMEIPServiceInstance = instance
             identifer:str = instance.identifer()
-            if identifer in instanceDic and instance.instanceid() != instanceDic[identifer]:
+            if identifer in instanceDic and instance.instanceid() != instanceDic[identifer]["instanceId"]:
                 if (identifer in repeatDict):
                     repeatDict[identifer] += 1
                 else:
                     repeatDict[identifer] = 1
                 identifer += "_" + chr(ord('A') + repeatDict[identifer])
-            instanceDic[identifer] = instance.instanceid()
+            instanceDic[identifer] = {
+                "instanceId": instance.instanceid(),
+                "ip": instance.socket().ip(),
+                "proto": instance.socket().proto(),
+                "port": instance.socket().portnumber()
+            }
         for identifer in repeatDict:
-            instanceDic[identifer + "_A"] = instanceDic[identifer]
+            instanceDic[identifer + "_A"] = {
+                "instanceId": instanceDic[identifer]["instanceId"],
+                "ip": instanceDic[identifer]["ip"],
+                "proto": instanceDic[identifer]["proto"],
+                "port": instanceDic[identifer]["port"]
+            }
             del instanceDic[identifer]
 
         return {
