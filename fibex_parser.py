@@ -644,8 +644,18 @@ class FibexParser(AbstractParser):
         utils = self.parse_utilization(element)
         serialization_attributes = self.parse_serialization_attributes(element)
 
+        arry = self.parse_array(element)
         params = []
         child = self.interpret_datatype(datatype, utils, serialization_attributes)
+
+        if arry is None:
+            child = self.build_array(
+                name,
+                serialization_attributes["ArrayLengthSize"],
+                arry,
+                child
+            )
+
         params += [self.__conf_factory__.create_someip_parameter(0, 'fieldparam', '', True, child, signal)]
 
         getter_debouncereq = -1
