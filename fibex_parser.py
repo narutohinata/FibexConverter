@@ -648,7 +648,7 @@ class FibexParser(AbstractParser):
         params = []
         child = self.interpret_datatype(datatype, utils, serialization_attributes)
 
-        if arry is None:
+        if arry is not None:
             child = self.build_array(
                 name,
                 serialization_attributes["ArrayLengthSize"],
